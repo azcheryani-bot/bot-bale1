@@ -38,7 +38,7 @@ def download_bale_file(file_id):
 def get_gemini_response(user_text, file_data=None, mime_type=None):
     """سوئیچ هوشمند بین تمامی مدل‌های جدید و پیش‌نمایش"""
     models_to_try = [
-        "gemini-3-flash-preview", "gemini-3.0-pro", "gemini-3.0-flash",
+        "gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-3.0-pro", "gemini-3.0-flash",
         "gemini-2.5-pro-preview", "gemini-2.5-flash-preview", "gemini-2.5-pro",
         "gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-2.0-flash",
         "gemini-1.5-pro", "gemini-1.5-flash"
