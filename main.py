@@ -7,42 +7,33 @@ BALE_TOKEN = os.getenv("BALE_TOKEN")
 
 def get_gemini_response(user_text):
     try:
-        # استفاده از v1beta و مدل flash (چون تنها مدلی بود که قبلاً برای شما 404 نداد)
-        # اضافه کردن پسوند :generateContent برای اطمینان از متد
-        model = "gemini-1.5-flash"
+        # استفاده از قدیمی‌ترین و پایدارترین مدل برای عبور از محدودیت منطقه
+        # مدل gemini-1.0-pro کمترین حساسیت را به آی‌پی دیتاسنترها دارد
+        model = "gemini-1.0-pro"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_KEY}"
         
         headers = {'Content-Type': 'application/json'}
         payload = {
-            "contents": [
-                {
-                    "parts": [{"text": user_text}]
-                }
-            ]
+            "contents": [{"parts": [{"text": user_text}]}]
         }
         
-        print(f"--- Trying {model} via v1beta ---", flush=True)
+        print(f"--- Trying to bypass region lock with {model} ---", flush=True)
         response = requests.post(url, json=payload, headers=headers, timeout=15)
         res_json = response.json()
         
         if response.status_code == 200:
             return res_json['candidates'][0]['content']['parts'][0]['text']
         
-        # اگر باز هم 404 داد، با یک مدل دیگر امتحان کن (Fallback)
-        elif response.status_code == 404:
-            print("--- Fallback to gemini-pro ---", flush=True)
-            url_pro = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
-            response = requests.post(url_pro, json=payload, headers=headers, timeout=15)
-            if response.status_code == 200:
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            return "گوگل این مدل را در این منطقه پشتیبانی نمی‌کند."
-            
+        elif response.status_code == 403:
+            return "گوگل دسترسی این سرور را به دلیل محدودیت منطقه‌ای مسدود کرده است. باید از پروکسی استفاده شود."
+        
         else:
             error_msg = res_json.get('error', {}).get('message', 'Unknown Error')
-            return f"گوگل پاسخ نداد: {error_msg[:100]}"
+            print(f"!!! Status {response.status_code}: {error_msg}", flush=True)
+            return f"خطای سرویس: {error_msg[:100]}"
             
     except Exception as e:
-        return f"خطای سیستمی: {str(e)[:50]}"
+        return f"خطای اتصال شبکه: {str(e)[:50]}"
 
 def send_message(chat_id, text):
     url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage"
@@ -53,7 +44,7 @@ def send_message(chat_id, text):
 
 def bot_loop():
     last_update_id = 0
-    print("--- ربات مجدداً با استراتژی جدید استارت خورد ---", flush=True)
+    print("--- ربات با مدل کلاسیک استارت خورد ---", flush=True)
     
     start_time = time.time()
     while time.time() - start_time < 21000: 
@@ -67,10 +58,10 @@ def bot_loop():
                     if "message" in update and "text" in update["message"]:
                         chat_id = update["message"]["chat"]["id"]
                         text = update["message"]["text"]
-                        print(f"Received: {text[:10]}", flush=True)
+                        print(f"New Message: {text[:10]}", flush=True)
                         reply = get_gemini_response(text)
                         send_message(chat_id, reply)
-        except Exception as e:
+        except:
             time.sleep(5)
         time.sleep(1)
 
