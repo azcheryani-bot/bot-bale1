@@ -1,2 +1,1 @@
 requests
-v2ray-python
