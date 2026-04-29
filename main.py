@@ -1,86 +1,56 @@
 import os
-import json
 import time
-import subprocess
 import requests
 
+# تنظیمات
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 BALE_TOKEN = os.getenv("BALE_TOKEN")
 
-V2_CONFIG = {
-    "log": {"loglevel": "warning"},
-    "inbounds": [{
-        "port": 10808,
-        "listen": "127.0.0.1",
-        "protocol": "socks",
-        "settings": {"auth": "noauth", "udp": True}
-    }],
-    "outbounds": [{
-        "protocol": "vmess",
-        "settings": {
-            "vnext": [{
-                "address": "47.90.244.153",
-                "port": 8443,
-                "users": [{
-                    "id": "65e2a985-ad20-4486-a7ec-b67b20ee56af",
-                    "alterId": 0,
-                    "security": "auto"
-                }]
-            }]
-        },
-        "streamSettings": {
-            "network": "ws",
-            "wsSettings": {"path": "/ws"}
-        }
-    }]
-}
-
-def setup_v2ray():
-    try:
-        print("--- Cleaning and Downloading V2Ray ---", flush=True)
-        # دانلود نسخه پایدارتر
-        os.system("curl -L -o v2ray.zip https://github.com/v2fly/v2ray-core/releases/v5.14.1/download/v2ray-linux-64.zip")
-        os.system("unzip -o v2ray.zip && chmod +x v2ray")
-        
-        with open("config.json", "w") as f:
-            json.dump(V2_CONFIG, f)
-        
-        print("--- Running V2Ray Process ---", flush=True)
-        # استفاده از حالت مستقیم برای اطمینان از اجرا
-        process = subprocess.Popen(["./v2ray", "run", "-c", "config.json"], 
-                                   stdout=subprocess.PIPE, 
-                                   stderr=subprocess.PIPE)
-        
-        # یک تست سریع برای دیدن اینکه پورت باز شده یا نه
-        time.sleep(15)
-        return True
-    except Exception as e:
-        print(f"Critical Setup Error: {e}", flush=True)
-        return False
+# استفاده از یک پروکسی HTTPS رایگان و معتبر به جای V2Ray برای تست پایداری
+# یا استفاده از آدرس ورکر کلاودفلر که قبلا ساختی (امن‌ترین راه)
+PROXY_DOMAIN = "crimson-scene-23ee.a-z-cheryani.workers.dev"
 
 def get_gemini_response(user_text):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-        
-        proxies = {
-            "http": "socks5h://127.0.0.1:10808",
-            "https": "socks5h://127.0.0.1:10808"
-        }
-        
-        # اضافه کردن یک تست قبل از درخواست اصلی
-        print("--- Testing Tunnel Connection ---", flush=True)
+        # فراخوانی از طریق ورکر کلاودفلر (بدون نیاز به نصب وی‌توری)
+        url = f"https://{PROXY_DOMAIN}/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         payload = {"contents": [{"parts": [{"text": user_text}]}]}
         
-        # افزایش تایم‌اوت به ۴۰ ثانیه چون وی‌توری در دیتاسنتر کمی کند است
-        response = requests.post(url, json=payload, proxies=proxies, timeout=40)
+        print(f"--- Sending to Cloudflare Worker ---", flush=True)
+        response = requests.post(url, json=payload, timeout=30)
         
         if response.status_code == 200:
             return response.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"خطای گوگل: {response.status_code} - احتمالا کلید یا آی‌پی بلاک است."
-            
+            return f"خطای گوگل: {response.status_code}. احتمالا کلید API مشکل دارد."
     except Exception as e:
-        print(f"Request Error: {e}", flush=True)
-        return "تونل وصل است ولی گوگل پاسخ نمی‌دهد (تایم‌اوت). دوباره بپرسید."
+        return "اتصال برقرار نشد. لطفا لحظاتی دیگر امتحان کنید."
 
-# بقیه توابع (send_message و bot_loop) بدون تغییر بمانند
+def bot_loop():
+    last_id = 0
+    print("--- Bot Started on GitHub Actions ---", flush=True)
+    start_time = time.time()
+    
+    while time.time() - start_time < 20000: # حدود ۵.۵ ساعت
+        try:
+            updates_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getUpdates?offset={last_id + 1}&timeout=20"
+            res = requests.get(updates_url, timeout=30).json()
+            
+            if res.get("ok") and res.get("result"):
+                for update in res["result"]:
+                    last_id = update["update_id"]
+                    if "message" in update and "text" in update["message"]:
+                        chat_id = update["message"]["chat"]["id"]
+                        text = update["message"]["text"]
+                        
+                        reply = get_gemini_response(text)
+                        
+                        send_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage"
+                        requests.post(send_url, json={"chat_id": chat_id, "text": reply})
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(5)
+        time.sleep(1)
+
+if __name__ == "__main__":
+    bot_loop()
