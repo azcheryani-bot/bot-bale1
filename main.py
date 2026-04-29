@@ -32,6 +32,10 @@ def get_gemini_response(user_text, image_data=None, mime_type=None):
     
     # لیست کامل مدل‌ها بر اساس اولویت قدرت و تازگی (سال ۲۰۲۶)
     models_to_try = [
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro-preview",
+        "gemini-2.5-flash-preview",
+        "gemini-2.0-flash-exp",
         "gemini-3.0-pro",
         "gemini-3.0-flash",
         "gemini-2.5-pro",
