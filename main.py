@@ -41,13 +41,15 @@ def get_gemini_response(user_text):
 def bot_loop():
     """حلقه اصلی برای دریافت و پاسخ به پیام‌های بله"""
     last_id = 0
-    print("--- Bale Bot (Cloudflare Proxy Edition) Started ---", flush=True)
+    print("--- Bale Bot Started ---", flush=True)
     
-    # اجرای اسکریپت برای حدود ۵.۵ ساعت (برای رعایت سقف گیت‌هاب اکشن)
-    start_time = time.time()
-    while time.time() - start_time < 20000: 
+    # ثبت زمان شروع اجرا
+    start_time = time.time() 
+    
+    # این همان خط مورد نظر است که اجازه می‌دهد ربات حدود ۵ ساعت و ۵۰ دقیقه بیدار بماند
+    while time.time() - start_time < 21000: 
         try:
-            # دریافت پیام‌های جدید (Long Polling)
+            # دریافت پیام‌ها از بله
             updates_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getUpdates?offset={last_id + 1}&timeout=20"
             response = requests.get(updates_url, timeout=30)
             res = response.json()
