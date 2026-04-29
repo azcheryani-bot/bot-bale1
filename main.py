@@ -20,57 +20,76 @@ def download_bale_file(file_id, is_image=True):
             file_content = requests.get(download_url).content
             
             if is_image:
-                # تبدیل عکس به Base64 برای ارسال به گوگل
                 return base64.b64encode(file_content).decode('utf-8'), "image/jpeg"
             else:
-                # خواندن متن داخل فایل (مثل .txt یا .py)
                 return file_content.decode('utf-8'), None
     except Exception as e:
         print(f"!!! Download Error: {e}", flush=True)
     return None, None
 
 def get_gemini_response(user_text, image_data=None, mime_type=None):
-    """ارسال داده‌ها به جمینی از طریق ورکر کلاودفلر"""
-    try:
-        url = f"https://{PROXY_DOMAIN}/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_KEY}"
-        
-        parts = []
-        if user_text:
-            parts.append({"text": user_text})
-        
-        if image_data:
-            parts.append({
-                "inline_data": {
-                    "mime_type": mime_type or "image/jpeg",
-                    "data": image_data
-                }
-            })
+    """تلاش برای گرفتن پاسخ با سوئیچ خودکار بین تمام مدل‌های تصویر ارسالی شما"""
+    
+    # لیست کامل مدل‌ها بر اساس اولویت قدرت و تازگی (سال ۲۰۲۶)
+    models_to_try = [
+        "gemini-3.0-pro",
+        "gemini-3.0-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b"
+    ]
+    
+    last_status = ""
 
-        if not parts:
-            return "پیام شما خالی است."
-
-        payload = {"contents": [{"parts": parts}]}
-        print(f"--- Sending request to Gemini (Multi-modal) ---", flush=True)
-        response = requests.post(url, json=payload, timeout=45)
-        
-        if response.status_code == 200:
-            res_json = response.json()
-            return res_json['candidates'][0]['content']['parts'][0]['text']
-        else:
-            print(f"!!! Google Error: {response.status_code} - {response.text[:100]}", flush=True)
-            return f"خطای گوگل: {response.status_code}"
+    for model_name in models_to_try:
+        try:
+            url = f"https://{PROXY_DOMAIN}/v1beta/models/{model_name}:generateContent?key={GEMINI_KEY}"
             
-    except Exception as e:
-        print(f"!!! Gemini Request Error: {e}", flush=True)
-        return "خطا در ارتباط با هوش مصنوعی."
+            parts = []
+            if user_text: parts.append({"text": user_text})
+            if image_data:
+                parts.append({
+                    "inline_data": {
+                        "mime_type": mime_type or "image/jpeg",
+                        "data": image_data
+                    }
+                })
+
+            if not parts: return "پیام خالی است."
+
+            payload = {"contents": [{"parts": parts}]}
+            print(f"--- Trying model: {model_name} ---", flush=True)
+            
+            response = requests.post(url, json=payload, timeout=45)
+            
+            if response.status_code == 200:
+                res_json = response.json()
+                return res_json['candidates'][0]['content']['parts'][0]['text']
+            
+            # اگر خطای Quota (429) یا سرور (503/500/404) داد، برو سراغ بعدی
+            else:
+                print(f"!!! {model_name} failed with status {response.status_code}. Switching...", flush=True)
+                last_status = f"خطای {response.status_code}"
+                continue
+
+        except Exception as e:
+            print(f"!!! Error with {model_name}: {e}", flush=True)
+            continue
+
+    return f"متأسفانه هیچ‌کدام از مدل‌ها در حال حاضر پاسخگو نیستند. (آخرین وضعیت: {last_status})"
 
 def bot_loop():
-    """حلقه اصلی ربات با پشتیبانی از فایل و عکس"""
+    """حلقه اصلی ربات با پشتیبانی از متن، عکس و فایل‌های متنی"""
     last_id = 0
-    print("--- Bale Bot (Full Version) Started ---", flush=True)
+    print("--- Bale Gemini Multi-Model Bot Started ---", flush=True)
     
     start_time = time.time()
-    # اجرا برای ۵ ساعت و ۵۰ دقیقه
+    # ۵ ساعت و ۵۰ دقیقه اجرا برای هماهنگی با GitHub Actions
     while time.time() - start_time < 21000:
         try:
             updates_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getUpdates?offset={last_id + 1}&timeout=20"
@@ -88,30 +107,27 @@ def bot_loop():
                     image_data = None
                     mime_type = None
 
-                    # ۱. بررسی وجود عکس
+                    # مدیریت عکس
                     if "photo" in message:
-                        file_id = message["photo"][-1]["file_id"] # گرفتن باکیفیت‌ترین نسخه
+                        file_id = message["photo"][-1]["file_id"]
                         image_data, mime_type = download_bale_file(file_id, is_image=True)
                         if not user_text: user_text = "این تصویر را تحلیل کن"
 
-                    # ۲. بررسی وجود فایل متنی
+                    # مدیریت فایل‌های متنی
                     elif "document" in message:
                         file_id = message["document"]["file_id"]
                         f_name = message["document"].get("file_name", "").lower()
-                        # لیست فرمت‌های متنی مجاز
-                        if f_name.endswith(('.txt', '.py', '.json', '.js', '.cpp', '.h', '.html', '.css')):
+                        if f_name.endswith(('.txt', '.py', '.json', '.js', '.cpp', '.h', '.html', '.css', '.md')):
                             content, _ = download_bale_file(file_id, is_image=False)
                             if content:
-                                user_text = f"محتوای فایل '{f_name}':\n\n{content}\n\nتوضیح کاربر: {user_text or 'این فایل را بررسی کن'}"
+                                user_text = f"محتوای فایل '{f_name}':\n\n{content}\n\nسوال کاربر: {user_text or 'تحلیل کن'}"
 
-                    # ارسال به جمینی اگر متن یا عکسی وجود داشت
                     if user_text or image_data:
-                        print(f"Processing message from {chat_id}", flush=True)
+                        print(f"Processing message from {chat_id}...", flush=True)
                         reply = get_gemini_response(user_text, image_data, mime_type)
                         
                         send_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage"
                         requests.post(send_url, json={"chat_id": chat_id, "text": reply}, timeout=20)
-                        print(f"Reply sent to {chat_id}", flush=True)
                             
         except Exception as e:
             print(f"!!! Loop Error: {e}", flush=True)
