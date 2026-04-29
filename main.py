@@ -12,19 +12,26 @@ PROXY_DOMAIN = "crimson-scene-23ee.a-z-cheryani.workers.dev"
 
 def get_gemini_response(user_text):
     try:
-        # فراخوانی از طریق ورکر کلاودفلر (بدون نیاز به نصب وی‌توری)
+        # دقت کن که v1/models/... بعد از دامنه ورکر حتما باشد
         url = f"https://{PROXY_DOMAIN}/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-        payload = {"contents": [{"parts": [{"text": user_text}]}]}
         
-        print(f"--- Sending to Cloudflare Worker ---", flush=True)
+        payload = {
+            "contents": [{
+                "parts": [{"text": user_text}]
+            }]
+        }
+        
+        # در این روش نیازی به Proxies در requests نیست چون ورکر خودش نقش پروکسی را دارد
         response = requests.post(url, json=payload, timeout=30)
         
         if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
+            res_json = response.json()
+            return res_json['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"خطای گوگل: {response.status_code}. احتمالا کلید API مشکل دارد."
+            # این بخش به ما می‌گوید گوگل دقیقاً چه ایرادی گرفته
+            return f"گوگل ارور داد: {response.status_code} - {response.text[:100]}"
     except Exception as e:
-        return "اتصال برقرار نشد. لطفا لحظاتی دیگر امتحان کنید."
+        return f"خطای اتصال به ورکر: {str(e)[:50]}"
 
 def bot_loop():
     last_id = 0
