@@ -3,149 +3,112 @@ import time
 import requests
 import base64
 
-# --- تنظیمات اولیه از طریق Secrets گیت‌هاب ---
+# --- تنظیمات Secrets ---
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 BALE_TOKEN = os.getenv("BALE_TOKEN")
 PROXY_DOMAIN = "crimson-scene-23ee.a-z-cheryani.workers.dev"
 
-def download_bale_file(file_id, is_image=True, is_pdf=False):
-    """دانلود فایل و تشخیص فرمت مناسب برای جمینی"""
+def get_mime_type(file_name):
+    """تشخیص هوشمند نوع فایل برای گوگل"""
+    ext = file_name.split('.')[-1].lower()
+    mapping = {
+        'pdf': 'application/pdf',
+        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+        'mp4': 'video/mp4', 'mpeg': 'video/mpeg', 'mov': 'video/quicktime',
+        'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+        'txt': 'text/plain', 'py': 'text/x-python', 'md': 'text/markdown',
+        'json': 'application/json', 'js': 'application/javascript'
+    }
+    return mapping.get(ext, 'application/octet-stream')
+
+def download_bale_file(file_id):
+    """دانلود فایل از بله و تبدیل مستقیم به بیس۶۴"""
     try:
-        get_file_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getFile?file_id={file_id}"
-        file_info = requests.get(get_file_url).json()
-        
+        info_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getFile?file_id={file_id}"
+        file_info = requests.get(info_url).json()
         if file_info.get("ok"):
-            file_path = file_info["result"]["file_path"]
-            download_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
-            file_content = requests.get(download_url).content
-            
-            if is_image or is_pdf:
-                m_type = "application/pdf" if is_pdf else "image/jpeg"
-                return base64.b64encode(file_content).decode('utf-8'), m_type
-            else:
-                return file_content.decode('utf-8'), None
+            path = file_info["result"]["file_path"]
+            down_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{path}"
+            content = requests.get(down_url).content
+            return base64.b64encode(content).decode('utf-8')
     except Exception as e:
         print(f"!!! Download Error: {e}", flush=True)
-    return None, None
+    return None
 
-def get_gemini_response(user_text, image_data=None, mime_type=None):
-    """تلاش برای گرفتن پاسخ با سوئیچ خودکار بین تمام مدل‌های تصویر ارسالی شما"""
-    
-    # لیست کامل مدل‌ها بر اساس اولویت قدرت و تازگی (سال ۲۰۲۶)
+def get_gemini_response(user_text, file_data=None, mime_type=None):
+    """سوئیچ هوشمند بین تمامی مدل‌های جدید و پیش‌نمایش"""
     models_to_try = [
-        "gemini-3-flash-preview",
-        "gemini-2.5-pro-preview",
-        "gemini-2.5-flash-preview",
-        "gemini-2.0-flash-exp",
-        "gemini-3.0-pro",
-        "gemini-3.0-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b"
+        "gemini-3-flash-preview", "gemini-3.0-pro", "gemini-3.0-flash",
+        "gemini-2.5-pro-preview", "gemini-2.5-flash-preview", "gemini-2.5-pro",
+        "gemini-2.5-flash", "gemini-2.0-flash-exp", "gemini-2.0-flash",
+        "gemini-1.5-pro", "gemini-1.5-flash"
     ]
     
-    last_status = ""
-
     for model_name in models_to_try:
         try:
             url = f"https://{PROXY_DOMAIN}/v1beta/models/{model_name}:generateContent?key={GEMINI_KEY}"
-            
             parts = []
             if user_text: parts.append({"text": user_text})
-            if image_data:
-                parts.append({
-                    "inline_data": {
-                        "mime_type": mime_type or "image/jpeg",
-                        "data": image_data
-                    }
-                })
+            if file_data:
+                parts.append({"inline_data": {"mime_type": mime_type, "data": file_data}})
 
             if not parts: return "پیام خالی است."
 
             payload = {"contents": [{"parts": parts}]}
             print(f"--- Trying model: {model_name} ---", flush=True)
             
-            response = requests.post(url, json=payload, timeout=45)
-            
+            response = requests.post(url, json=payload, timeout=50)
             if response.status_code == 200:
-                res_json = response.json()
-                return res_json['candidates'][0]['content']['parts'][0]['text']
-            
-            # اگر خطای Quota (429) یا سرور (503/500/404) داد، برو سراغ بعدی
-            else:
-                print(f"!!! {model_name} failed with status {response.status_code}. Switching...", flush=True)
-                last_status = f"خطای {response.status_code}"
-                continue
-
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            print(f"!!! {model_name} failed: {response.status_code}")
         except Exception as e:
-            print(f"!!! Error with {model_name}: {e}", flush=True)
+            print(f"!!! Error with {model_name}: {e}")
             continue
-
-    return f"متأسفانه هیچ‌کدام از مدل‌ها در حال حاضر پاسخگو نیستند. (آخرین وضعیت: {last_status})"
+    return "متأسفانه هیچ‌کدام از مدل‌ها در حال حاضر پاسخگو نیستند."
 
 def bot_loop():
-    """حلقه اصلی ربات با پشتیبانی از متن، عکس و فایل‌های متنی"""
     last_id = 0
-    print("--- Bale Gemini Multi-Model Bot Started ---", flush=True)
-    
+    print("--- Ultra Multimodal Bot (2026 Edition) Started ---", flush=True)
     start_time = time.time()
-    # ۵ ساعت و ۵۰ دقیقه اجرا برای هماهنگی با GitHub Actions
+    
     while time.time() - start_time < 21000:
         try:
             updates_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getUpdates?offset={last_id + 1}&timeout=20"
-            response = requests.get(updates_url, timeout=30)
-            res = response.json()
+            res = requests.get(updates_url, timeout=30).json()
             
             if res.get("ok") and res.get("result"):
                 for update in res["result"]:
                     last_id = update["update_id"]
-                    message = update.get("message", {})
-                    chat_id = message.get("chat", {}).get("id")
+                    msg = update.get("message", {})
+                    chat_id = msg.get("chat", {}).get("id")
                     if not chat_id: continue
 
-                    user_text = message.get("text") or message.get("caption")
-                    image_data = None
-                    mime_type = None
+                    text = msg.get("text") or msg.get("caption")
+                    f_data, m_type = None, None
 
-                    # مدیریت عکس
-                    if "photo" in message:
-                        file_id = message["photo"][-1]["file_id"]
-                        image_data, mime_type = download_bale_file(file_id, is_image=True)
-                        if not user_text: user_text = "این تصویر را تحلیل کن"
+                    # مدیریت هوشمند انواع ورودی
+                    if "photo" in msg:
+                        f_data = download_bale_file(msg["photo"][-1]["file_id"])
+                        m_type = "image/jpeg"
+                    elif "document" in msg:
+                        f_data = download_bale_file(msg["document"]["file_id"])
+                        m_type = get_mime_type(msg["document"].get("file_name", ""))
+                    elif "video" in msg:
+                        f_data = download_bale_file(msg["video"]["file_id"])
+                        m_type = "video/mp4"
+                    elif "audio" in msg or "voice" in msg:
+                        key = "audio" if "audio" in msg else "voice"
+                        f_data = download_bale_file(msg[key]["file_id"])
+                        m_type = "audio/mpeg" # یا audio/ogg بسته به فایل
 
-                   # در بخش مدیریت فایل‌ها در متد bot_loop:
-
-                    elif "document" in message:
-                        file_id = message["document"]["file_id"]
-                        f_name = message["document"].get("file_name", "").lower()
-                        
-                        # اضافه شدن پشتیبانی از PDF
-                        if f_name.endswith('.pdf'):
-                            # دانلود به صورت باینری (مثل عکس)
-                            image_data, mime_type = download_bale_file(file_id, is_image=True, is_pdf=True)
-                            if not user_text: user_text = "این فایل PDF را تحلیل کن"
-                        
-                        # بقیه فایل‌های متنی (مثل قبل)
-                        elif f_name.endswith(('.txt', '.py', '.json', '.js', '.md')):
-                            content, _ = download_bale_file(file_id, is_image=False)
-                            if content:
-                                user_text = f"محتوای فایل '{f_name}':\n\n{content}\n\nسوال کاربر: {user_text or 'تحلیل کن'}"
-                    if user_text or image_data:
-                        print(f"Processing message from {chat_id}...", flush=True)
-                        reply = get_gemini_response(user_text, image_data, mime_type)
-                        
-                        send_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage"
-                        requests.post(send_url, json={"chat_id": chat_id, "text": reply}, timeout=20)
-                            
+                    if text or f_data:
+                        print(f"Processing from {chat_id}...", flush=True)
+                        reply = get_gemini_response(text, f_data, m_type)
+                        requests.post(f"https://tapi.bale.ai/bot{BALE_TOKEN}/sendMessage", 
+                                      json={"chat_id": chat_id, "text": reply}, timeout=20)
         except Exception as e:
-            print(f"!!! Loop Error: {e}", flush=True)
+            print(f"Loop Error: {e}")
             time.sleep(5)
-            
         time.sleep(1)
 
 if __name__ == "__main__":
