@@ -8,8 +8,8 @@ GEMINI_KEY = os.getenv("GEMINI_KEY")
 BALE_TOKEN = os.getenv("BALE_TOKEN")
 PROXY_DOMAIN = "crimson-scene-23ee.a-z-cheryani.workers.dev"
 
-def download_bale_file(file_id, is_image=True):
-    """دانلود فایل از سرور بله و تبدیل به فرمت قابل فهم برای جمینی"""
+def download_bale_file(file_id, is_image=True, is_pdf=False):
+    """دانلود فایل و تشخیص فرمت مناسب برای جمینی"""
     try:
         get_file_url = f"https://tapi.bale.ai/bot{BALE_TOKEN}/getFile?file_id={file_id}"
         file_info = requests.get(get_file_url).json()
@@ -19,8 +19,9 @@ def download_bale_file(file_id, is_image=True):
             download_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
             file_content = requests.get(download_url).content
             
-            if is_image:
-                return base64.b64encode(file_content).decode('utf-8'), "image/jpeg"
+            if is_image or is_pdf:
+                m_type = "application/pdf" if is_pdf else "image/jpeg"
+                return base64.b64encode(file_content).decode('utf-8'), m_type
             else:
                 return file_content.decode('utf-8'), None
     except Exception as e:
@@ -117,15 +118,23 @@ def bot_loop():
                         image_data, mime_type = download_bale_file(file_id, is_image=True)
                         if not user_text: user_text = "این تصویر را تحلیل کن"
 
-                    # مدیریت فایل‌های متنی
+                   # در بخش مدیریت فایل‌ها در متد bot_loop:
+
                     elif "document" in message:
                         file_id = message["document"]["file_id"]
                         f_name = message["document"].get("file_name", "").lower()
-                        if f_name.endswith(('.txt', '.py', '.json', '.js', '.cpp', '.h', '.html', '.css', '.md')):
+                        
+                        # اضافه شدن پشتیبانی از PDF
+                        if f_name.endswith('.pdf'):
+                            # دانلود به صورت باینری (مثل عکس)
+                            image_data, mime_type = download_bale_file(file_id, is_image=True, is_pdf=True)
+                            if not user_text: user_text = "این فایل PDF را تحلیل کن"
+                        
+                        # بقیه فایل‌های متنی (مثل قبل)
+                        elif f_name.endswith(('.txt', '.py', '.json', '.js', '.md')):
                             content, _ = download_bale_file(file_id, is_image=False)
                             if content:
                                 user_text = f"محتوای فایل '{f_name}':\n\n{content}\n\nسوال کاربر: {user_text or 'تحلیل کن'}"
-
                     if user_text or image_data:
                         print(f"Processing message from {chat_id}...", flush=True)
                         reply = get_gemini_response(user_text, image_data, mime_type)
