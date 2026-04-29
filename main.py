@@ -30,9 +30,9 @@ def download_bale_file(file_id, is_image=True):
     return None, None
 
 def get_gemini_response(user_text, image_data=None, mime_type=None):
-    """ارسال داده‌ها به جمینی ۲.۵ فلش از طریق ورکر کلاودفلر"""
+    """ارسال داده‌ها به جمینی از طریق ورکر کلاودفلر"""
     try:
-        url = f"https://{PROXY_DOMAIN}/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GEMINI_KEY}"
+        url = f"https://{PROXY_DOMAIN}/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_KEY}"
         
         parts = []
         if user_text:
