@@ -13,7 +13,7 @@ def get_gemini_response(user_text):
     """ارسال متن به گوگل از طریق ورکر کلاودفلر"""
     try:
         # آدرس کامل API جمینی نسخه v1
-        url = f"https://{PROXY_DOMAIN}/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        url = f"https://{PROXY_DOMAIN}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         
         payload = {
             "contents": [{
