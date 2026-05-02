@@ -1,0 +1,14 @@
+FROM python:3.10-slim
+
+# تنظیم دایرکتوری کاری
+WORKDIR /app
+
+# کپی کردن فایل نیازمندی‌ها
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# کپی کردن تمام فایل‌های پروژه
+COPY . .
+
+# اجرای ربات
+CMD ["python", "main.py"]
